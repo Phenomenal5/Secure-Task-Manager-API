@@ -1,5 +1,6 @@
-import crypto from "crypto";
 import mongoose from "mongoose";
+import validator from "validator";
+import bcrypt from "bcrypt";
 
 const userSchema = new mongoose.Schema(
   {
@@ -10,10 +11,8 @@ const userSchema = new mongoose.Schema(
     },
     email: {
       type: String,
-      required: [true, "Email is required"],
       unique: true,
-      lowercase: true,
-      trim: true,
+      validate: [validator.isEmail, "Invalid email address"]
     },
     password: {
       type: String,
@@ -28,21 +27,17 @@ const userSchema = new mongoose.Schema(
 );
 
 // Hash passwords before saving. Google-only users may not have a password.
-userSchema.pre("save", function (next) {
-  if (!this.isModified("password") || !this.password) return next();
+userSchema.pre("save", async function () {
+  if (!this.isModified("password") || !this.password) return;
 
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.scryptSync(this.password, salt, 64).toString("hex");
-
-  this.password = `${salt}:${hash}`;
-  next();
+  const salt = await bcrypt.gensalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
 });
 
-userSchema.methods.checkPassword = function (plainPassword) {
-  const [salt, storedHash] = this.password.split(":");
-  const hash = crypto.scryptSync(plainPassword, salt, 64).toString("hex");
+// compare password
+userSchema.methods.checkPassword = async function (plainPassword) {
 
-  return crypto.timingSafeEqual(Buffer.from(storedHash), Buffer.from(hash));
+  return await bcrypt.compare(plainPassword, this.password);
 };
 
 export default mongoose.model("User", userSchema);
